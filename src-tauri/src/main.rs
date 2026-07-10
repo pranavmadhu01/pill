@@ -10,9 +10,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::menu::{IconMenuItemBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItemBuilder, IconMenuItemBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::AppHandle;
+use tauri_plugin_autostart::ManagerExt;
 
 const ICON_IDLE: tauri::image::Image<'_> = tauri::include_image!("./icons/tray-idle.png");
 const ICON_PENDING_BRIGHT: tauri::image::Image<'_> =
@@ -177,13 +178,14 @@ fn start_pending_glow(app: &AppHandle, store: Arc<Mutex<Store>>) {
 const NOTIFY_RETRY_SECS: u64 = 12;
 
 // Fires a real macOS notification and blocks (on its own thread) waiting to
-// see if the user clicks it -- if so, pops the tray menu open, since a menu
-// bar app can't open its own menu except in response to a real click.
+// see if the user acts on it -- Allow/Deny are real buttons on the banner
+// itself (main button + close button), so most approvals never need the
+// tray menu at all. Clicking the notification body (not a button) instead
+// pops the tray menu open, for "Answer in Terminal" or just more context.
 //
 // Banners auto-dismiss in a couple seconds regardless of anything we do, so
 // one notification is easy to miss. Keep re-announcing until the approval
-// is actually decided (however that happens -- clicking the notification,
-// or just opening the tray menu directly).
+// is actually decided (however that happens).
 #[cfg(target_os = "macos")]
 fn notify_approval_pending(app: &AppHandle, store: Arc<Mutex<Store>>, approval_id: String, title: String, body: String) {
     if !running_from_app_bundle() {
@@ -195,12 +197,25 @@ fn notify_approval_pending(app: &AppHandle, store: Arc<Mutex<Store>>, approval_i
             let mut opts = mac_notification_sys::Notification::new();
             opts.wait_for_click(true);
             opts.default_sound();
+            opts.main_button(mac_notification_sys::MainButton::SingleAction("Allow"));
+            opts.close_button("Deny");
             let response = mac_notification_sys::send_notification(&title, None, &body, Some(&opts));
-            if matches!(response, Ok(mac_notification_sys::NotificationResponse::Click)) {
-                if let Some(tray) = app.tray_by_id("main") {
-                    let _ = tray.with_inner_tray_icon(|icon| icon.show_menu());
+            match response {
+                Ok(mac_notification_sys::NotificationResponse::ActionButton(_)) => {
+                    decide(&store, &approval_id, "allow");
+                    return;
                 }
-                return;
+                Ok(mac_notification_sys::NotificationResponse::CloseButton(_)) => {
+                    decide(&store, &approval_id, "deny");
+                    return;
+                }
+                Ok(mac_notification_sys::NotificationResponse::Click) => {
+                    if let Some(tray) = app.tray_by_id("main") {
+                        let _ = tray.with_inner_tray_icon(|icon| icon.show_menu());
+                    }
+                    return;
+                }
+                _ => {}
             }
             std::thread::sleep(Duration::from_secs(NOTIFY_RETRY_SECS));
         }
@@ -266,8 +281,18 @@ fn rebuild_menu(app: &AppHandle, store: &Arc<Mutex<Store>>) {
         menu = menu.item(&row);
     }
 
+    let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+    let autostart_item = CheckMenuItemBuilder::with_id("toggle-autostart", "Launch at Login")
+        .checked(autostart_enabled)
+        .build(app)
+        .unwrap();
     let quit_item = PredefinedMenuItem::quit(app, Some("Quit Claude Pill")).unwrap();
-    let menu = menu.separator().item(&quit_item).build().unwrap();
+    let menu = menu
+        .separator()
+        .item(&autostart_item)
+        .item(&quit_item)
+        .build()
+        .unwrap();
 
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_menu(Some(menu));
@@ -443,9 +468,23 @@ fn main() {
                 if let Some(cwd) = cwd {
                     open_project(&cwd);
                 }
+            } else if id == "toggle-autostart" {
+                let autolaunch = app.autolaunch();
+                let result = if autolaunch.is_enabled().unwrap_or(false) {
+                    autolaunch.disable()
+                } else {
+                    autolaunch.enable()
+                };
+                if let Err(e) = result {
+                    eprintln!("Claude Pill: could not toggle launch at login: {e}");
+                }
             }
             rebuild_menu(app, &store_for_menu);
         })
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(move |app| {
             // Menu bar accessory, not a Dock app: this is a tray-only utility,
             // no window of its own at all.
