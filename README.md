@@ -1,4 +1,6 @@
-# Claude Pill
+# Pill
+
+*An unofficial, open-source menu bar companion for [Claude Code](https://docs.claude.com/en/docs/claude-code) — not affiliated with or endorsed by Anthropic.*
 
 A macOS menu bar utility that shows what your Claude Code sessions are doing
 and lets you **Allow / Deny a pending tool call right from the menu bar** —
@@ -29,7 +31,7 @@ free, the same way Wi-Fi/Bluetooth/Docker's menu bar items do.
 - Claude Code **hooks** (configured in `~/.claude/settings.json`, see Setup)
   talk to it:
   - `PreToolUse` → POSTs the pending tool call to `/approval` and **blocks**.
-    Before ever contacting the widget, the hook (`hooks/claude_pill_pretooluse.py`)
+    Before ever contacting the widget, the hook (`hooks/pill_pretooluse.py`)
     checks three things, each of which can skip the widget entirely and let
     Claude Code's own flow handle it silently:
     1. **Does an existing `permissions.allow`/`deny`/`ask` rule in settings.json
@@ -46,14 +48,15 @@ free, the same way Wi-Fi/Bluetooth/Docker's menu bar items do.
 
     If none of those settle it, the request goes to the widget, which shows
     Allow / Deny / Answer in Terminal in the tray menu and fires a macOS
-    notification (re-announced every ~12s until resolved, since banners
-    auto-dismiss in a couple seconds — clicking one pops the menu open).
+    notification with real Allow/Deny action buttons and sound (re-announced
+    every ~12s until resolved, since banners auto-dismiss in a couple seconds
+    — clicking the notification body instead of a button pops the menu open).
     The hook returns the decision to Claude Code (`permissionDecision:
     allow|deny`). Answering in the terminal (or a timeout, or the widget not
     running) makes the hook exit silently, so Claude Code falls back to its
     normal terminal prompt — the widget can never lock you out.
   - `SessionStart / UserPromptSubmit / Stop / Notification / SessionEnd` →
-    fire-and-forget POSTs to `/event` (`hooks/claude_pill_event.py`), which is
+    fire-and-forget POSTs to `/event` (`hooks/pill_event.py`), which is
     how the menu knows each session's repo, status (working / idle / needs
     attention), and current permission mode.
 - The tray icon itself pulses an orange glow while an approval is pending
@@ -65,6 +68,8 @@ free, the same way Wi-Fi/Bluetooth/Docker's menu bar items do.
   goes through macOS's generic document-open path and skips VS Code's
   "already open somewhere? focus that window" logic — `open -a` was
   reliably opening duplicate windows instead of reusing the existing one.
+- "Launch at Login" in the menu toggles a real `LaunchAgent`, checked state
+  reflects the actual current registration.
 
 ## Setup
 
@@ -72,7 +77,7 @@ free, the same way Wi-Fi/Bluetooth/Docker's menu bar items do.
 
 **2. Install dependencies**
 ```bash
-cd claude-pill
+cd pill
 npm install
 ```
 
@@ -80,8 +85,8 @@ npm install
 without needing to redeploy every time):
 ```bash
 mkdir -p ~/.claude/hooks
-ln -s "$(pwd)/hooks/claude_pill_pretooluse.py" ~/.claude/hooks/claude_pill_pretooluse.py
-ln -s "$(pwd)/hooks/claude_pill_event.py" ~/.claude/hooks/claude_pill_event.py
+ln -s "$(pwd)/hooks/pill_pretooluse.py" ~/.claude/hooks/pill_pretooluse.py
+ln -s "$(pwd)/hooks/pill_event.py" ~/.claude/hooks/pill_event.py
 ```
 Then merge `hooks/settings.snippet.json` into `~/.claude/settings.json`
 (create it if it doesn't exist). If you already have hooks configured, append
@@ -101,8 +106,11 @@ npm run tauri build -- --debug   # fast iteration build
 # or, for a real release build:
 npm run tauri icon src-tauri/icons/icon.png   # regenerate app icon sizes first
 npm run tauri build
-open "src-tauri/target/debug/bundle/macos/Claude Pill.app"   # (or .../release/... )
+open "src-tauri/target/release/bundle/macos/Pill.app"   # (or .../debug/... )
 ```
+For everyday use, copy `Pill.app` into `/Applications` first, launch it from
+there, *then* turn on "Launch at Login" — that way the login item points at
+a stable path instead of a build folder that `cargo clean` can wipe out.
 
 **5. Restart Claude Code** sessions so they pick up the hooks.
 
@@ -119,17 +127,17 @@ open "src-tauri/target/debug/bundle/macos/Claude Pill.app"   # (or .../release/.
 - Menu item icons only support a leading (left) image — that's a hard
   `NSMenuItem` limitation, not something we chose; a trailing icon would mean
   dropping to a fully custom `NSView`-based item.
+- macOS tucks notification action buttons behind an Options/hover reveal by
+  default for this notification API — that's a system presentation choice,
+  not something this app controls.
 - Hook payload fields and the `PreToolUse` decision schema are current as of
   mid-2026; if a Claude Code update changes them, check
   https://docs.claude.com/en/docs/claude-code (hooks reference) and adjust
-  `claude_pill_pretooluse.py`.
+  `pill_pretooluse.py`.
 
 ## Roadmap ideas
 
 - "Allow & remember" — write the matched pattern straight into
   `permissions.allow` from the menu, so repeated approvals taper off
-- Allow/Deny as real action buttons on the notification itself
-  (`mac-notification-sys` supports this), not just click-to-open-menu
-- Launch at login
 - Windows (toast fallback) and Linux builds — the Rust/hook core not tied to
   a window is already most of the way there

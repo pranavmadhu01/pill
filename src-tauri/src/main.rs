@@ -1,4 +1,4 @@
-// Claude Pill — menu bar approval widget for Claude Code
+// Pill — a menu bar companion for Claude Code
 // Runs a local HTTP server that Claude Code hooks talk to:
 //   POST /event    -> fire-and-forget session status updates
 //   POST /approval -> BLOCKS until the user decides in the menu (or times out)
@@ -94,7 +94,7 @@ fn decide(store: &Arc<Mutex<Store>>, id: &str, decision: &str) {
     if let Some(tx) = tx {
         let _ = tx.send(json!({
             "decision": decision, // "allow" | "deny" | "passthrough"
-            "reason": "Decided in Claude Pill"
+            "reason": "Decided in Pill"
         }));
     }
 }
@@ -286,7 +286,7 @@ fn rebuild_menu(app: &AppHandle, store: &Arc<Mutex<Store>>) {
         .checked(autostart_enabled)
         .build(app)
         .unwrap();
-    let quit_item = PredefinedMenuItem::quit(app, Some("Quit Claude Pill")).unwrap();
+    let quit_item = PredefinedMenuItem::quit(app, Some("Quit Pill")).unwrap();
     let menu = menu
         .separator()
         .item(&autostart_item)
@@ -390,7 +390,7 @@ fn handle_approval(app: &AppHandle, store: &Arc<Mutex<Store>>, body: &Value) -> 
     // "passthrough" so Claude Code falls back to its normal terminal prompt.
     let decision = rx
         .recv_timeout(Duration::from_secs(APPROVAL_WAIT_SECS))
-        .unwrap_or_else(|_| json!({ "decision": "passthrough", "reason": "Timed out in Claude Pill" }));
+        .unwrap_or_else(|_| json!({ "decision": "passthrough", "reason": "Timed out in Pill" }));
 
     {
         let mut s = store.lock().unwrap();
@@ -412,7 +412,7 @@ fn run_http(app: AppHandle, store: Arc<Mutex<Store>>) {
     let server = match tiny_http::Server::http(HTTP_ADDR) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Claude Pill: could not bind {HTTP_ADDR}: {e}");
+            eprintln!("Pill: could not bind {HTTP_ADDR}: {e}");
             return;
         }
     };
@@ -476,7 +476,7 @@ fn main() {
                     autolaunch.enable()
                 };
                 if let Err(e) = result {
-                    eprintln!("Claude Pill: could not toggle launch at login: {e}");
+                    eprintln!("Pill: could not toggle launch at login: {e}");
                 }
             }
             rebuild_menu(app, &store_for_menu);
@@ -495,13 +495,13 @@ fn main() {
             // identity; see running_from_app_bundle().
             #[cfg(target_os = "macos")]
             if running_from_app_bundle() {
-                let _ = mac_notification_sys::set_application("com.claudepill.widget");
+                let _ = mac_notification_sys::set_application("com.pill.widget");
             }
 
             TrayIconBuilder::with_id("main")
                 .icon(ICON_IDLE)
                 .icon_as_template(true)
-                .tooltip("Claude Pill")
+                .tooltip("Pill")
                 .build(app)?;
             rebuild_menu(app.handle(), &store_for_setup);
 
@@ -511,5 +511,5 @@ fn main() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running Claude Pill");
+        .expect("error while running Pill");
 }

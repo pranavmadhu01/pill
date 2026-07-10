@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Self-check for claude_pill_pretooluse.py's permission-rule matcher.
-Run directly: python3 hooks/test_claude_pill_pretooluse.py
+"""Self-check for pill_pretooluse.py's permission-rule matcher.
+Run directly: python3 hooks/test_pill_pretooluse.py
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from claude_pill_pretooluse import (
+from pill_pretooluse import (
     _domain_matches,
     _frontmost_matches_project,
     _path_matches,
@@ -58,17 +58,17 @@ t("bare star matches everything", _domain_matches("*", "anything.at.all"))
 
 # Frontmost-window focus check
 t("matching app and title skips the widget",
-  _frontmost_matches_project("Code", "main.rs — claude-pill", "/Users/user/claude-pill"))
+  _frontmost_matches_project("Code", "main.rs — pill", "/Users/user/pill"))
 t("right app, wrong project in title",
-  not _frontmost_matches_project("Code", "main.rs — some-other-repo", "/Users/user/claude-pill"))
+  not _frontmost_matches_project("Code", "main.rs — some-other-repo", "/Users/user/pill"))
 t("right title, non-terminal app doesn't count",
-  not _frontmost_matches_project("Safari", "claude-pill", "/Users/user/claude-pill"))
+  not _frontmost_matches_project("Safari", "pill", "/Users/user/pill"))
 t("iTerm counts as terminal-like",
-  _frontmost_matches_project("iTerm2", "~/claude-pill — zsh", "/Users/user/claude-pill"))
+  _frontmost_matches_project("iTerm2", "~/pill — zsh", "/Users/user/pill"))
 
 # Live permission_mode handling (no settings.json rules involved -- a
 # nonexistent cwd/home guarantees an empty rule set)
-NOWHERE = "/nonexistent-claude-pill-test-dir"
+NOWHERE = "/nonexistent-pill-test-dir"
 t("acceptEdits settles Write",
   already_settled("Write", {"file_path": "x.py"}, NOWHERE, "acceptEdits"))
 t("acceptEdits settles Edit/MultiEdit/NotebookEdit too",

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Claude Pill — PreToolUse hook.
+"""Pill — PreToolUse hook.
 
-Sends the pending tool call to the Claude Pill widget and BLOCKS until the
+Sends the pending tool call to the Pill widget and BLOCKS until the
 user taps Allow / Deny / Terminal there.
 
 But only when Claude Code would actually have to ask: if the call is already
@@ -228,12 +228,6 @@ def main() -> None:
     except Exception:
         sys.exit(0)
 
-    try:
-        with open(os.path.expanduser("~/claude_pill_payload_debug.json"), "a") as f:
-            f.write(json.dumps(data, indent=2) + "\n---\n")
-    except Exception:
-        pass
-
     tool = data.get("tool_name", "Tool")
     tool_input = data.get("tool_input") or {}
     cwd = data.get("cwd", "") or os.getcwd()
@@ -271,7 +265,7 @@ def main() -> None:
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": decision,
-            "permissionDecisionReason": answer.get("reason", "Decided in Claude Pill"),
+            "permissionDecisionReason": answer.get("reason", "Decided in Pill"),
         }
     }))
     sys.exit(0)

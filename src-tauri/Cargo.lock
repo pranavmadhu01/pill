@@ -345,18 +345,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e4de3bc4ea267985becf712dc6d9eed8b04c953b3fcfb339ebc87acd9804901"
 
 [[package]]
-name = "claude-pill"
-version = "0.1.0"
-dependencies = [
- "mac-notification-sys",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tiny_http",
-]
-
-[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2197,6 +2185,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
  "siphasher",
+]
+
+[[package]]
+name = "pill"
+version = "0.1.0"
+dependencies = [
+ "mac-notification-sys",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tiny_http",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 [package]
-name = "claude-pill"
+name = "pill"
 version = "0.1.0"
-description = "Menu bar approval widget for Claude Code"
+description = "A menu bar companion for Claude Code"
 edition = "2021"
 
 [build-dependencies]

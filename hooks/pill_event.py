@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Pill — status event hook (fire-and-forget).
+"""Pill — status event hook (fire-and-forget).
 
 Wire this to SessionStart, UserPromptSubmit, Notification, Stop, SessionEnd.
 It forwards the event to the widget so the pill can show which sessions
