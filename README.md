@@ -66,10 +66,14 @@ buttons, no matter which Space or full-screen app you're currently in.
 ## Install
 
 **1. Download the latest release** (a `.dmg`) from the Releases page, open
-it, and drag **Pill.app** into **Applications**. It isn't code-signed or
-notarized yet, so on first launch macOS will refuse to open it — right-click
-(or Control-click) **Pill.app** and choose **Open**, then confirm once in
-the dialog that appears. You only need to do this the first time.
+it, and drag **Pill.app** into **Applications**. It isn't notarized with a
+paid Apple Developer ID yet, so macOS will refuse to open it with **"Pill"
+is damaged and can't be opened** — that's Gatekeeper being unable to verify
+an unsigned, browser-downloaded app, not an actual problem with the file.
+Clear the quarantine flag once and it'll open normally from then on:
+```bash
+xattr -cr /Applications/Pill.app
+```
 
 **2. Launch it once**, then run this one command in Terminal to wire up the
 Claude Code hooks — it's bundled inside the app, so there's nothing else to

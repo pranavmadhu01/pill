@@ -158,6 +158,15 @@ real cause turned up — hopefully this saves you the loop.
   the `.py` files themselves) — that part genuinely isn't kept in sync
   automatically, so if you change `hooks/settings.snippet.json`, re-merge it
   into `~/.claude/settings.json` by hand.
+- **"Pill is damaged and can't be opened" on a fresh download is expected,
+  not a build bug.** Rust's linker already ad-hoc-signs the binary on Apple
+  Silicon (`codesign -dv` shows `Signature=adhoc`), but there's no real
+  Developer ID behind it (`TeamIdentifier=not set`), so a quarantined
+  (browser-downloaded) copy fails Gatekeeper outright instead of falling
+  back to the milder "unidentified developer" prompt. The only real fixes
+  are `xattr -cr` (what the README/release notes tell users to run) or
+  actually notarizing with a paid Apple Developer ID — there's no free way
+  to make this fully clean.
 
 ## Code style
 
