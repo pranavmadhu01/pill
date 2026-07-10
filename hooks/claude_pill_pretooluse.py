@@ -36,8 +36,8 @@ def summarize(tool: str, tool_input: dict) -> str:
         return tool_input.get("command", "")
     if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         return tool_input.get("file_path", "")
-    if tool in ("WebFetch", "WebSearch"):
-        return tool_input.get("url", "") or tool_input.get("query", "")
+    if tool == "WebFetch":
+        return tool_input.get("url", "")
     return json.dumps(tool_input)[:300]
 
 

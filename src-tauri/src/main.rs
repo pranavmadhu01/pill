@@ -456,7 +456,7 @@ fn main() {
             // identity; see running_from_app_bundle().
             #[cfg(target_os = "macos")]
             if running_from_app_bundle() {
-                let _ = mac_notification_sys::set_application("com.claudepill.app");
+                let _ = mac_notification_sys::set_application("com.claudepill.widget");
             }
 
             TrayIconBuilder::with_id("main")
