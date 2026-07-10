@@ -19,6 +19,7 @@ try:
         "session_id": data.get("session_id", ""),
         "cwd": data.get("cwd", ""),
         "message": data.get("message", ""),
+        "permission_mode": data.get("permission_mode", ""),
     }).encode()
     req = urllib.request.Request(
         PILL_URL, data=payload, headers={"Content-Type": "application/json"}

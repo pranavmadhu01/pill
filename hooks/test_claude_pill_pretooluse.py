@@ -6,7 +6,13 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from claude_pill_pretooluse import _domain_matches, _frontmost_matches_project, _path_matches, _rule_matches
+from claude_pill_pretooluse import (
+    _domain_matches,
+    _frontmost_matches_project,
+    _path_matches,
+    _rule_matches,
+    already_settled,
+)
 
 
 def t(desc, cond):
@@ -59,5 +65,24 @@ t("right title, non-terminal app doesn't count",
   not _frontmost_matches_project("Safari", "claude-pill", "/Users/user/claude-pill"))
 t("iTerm counts as terminal-like",
   _frontmost_matches_project("iTerm2", "~/claude-pill — zsh", "/Users/user/claude-pill"))
+
+# Live permission_mode handling (no settings.json rules involved -- a
+# nonexistent cwd/home guarantees an empty rule set)
+NOWHERE = "/nonexistent-claude-pill-test-dir"
+t("acceptEdits settles Write",
+  already_settled("Write", {"file_path": "x.py"}, NOWHERE, "acceptEdits"))
+t("acceptEdits settles Edit/MultiEdit/NotebookEdit too",
+  all(already_settled(tool, {}, NOWHERE, "acceptEdits") for tool in
+      ("Edit", "MultiEdit", "NotebookEdit")))
+t("acceptEdits does NOT settle Bash",
+  not already_settled("Bash", {"command": "ls"}, NOWHERE, "acceptEdits"))
+t("bypassPermissions settles everything",
+  already_settled("Bash", {"command": "ls"}, NOWHERE, "bypassPermissions"))
+t("auto mode settles everything too",
+  already_settled("Bash", {"command": "ls"}, NOWHERE, "auto"))
+t("default mode settles nothing on its own",
+  not already_settled("Write", {"file_path": "x.py"}, NOWHERE, "default"))
+t("plan mode settles nothing either -- exiting plan to run something is a real decision",
+  not already_settled("Bash", {"command": "ls"}, NOWHERE, "plan"))
 
 print("all checks passed")

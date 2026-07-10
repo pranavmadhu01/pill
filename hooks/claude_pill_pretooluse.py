@@ -155,11 +155,16 @@ def _rule_matches(rule: str, tool: str, tool_input: dict, cwd: str) -> bool:
     return _path_matches(spec, tool_input.get("file_path", ""), cwd)
 
 
-def already_settled(tool: str, tool_input: dict, cwd: str) -> bool:
-    """True if Claude Code's own settings.json rules already decide this one
-    way or the other, with no interactive prompt involved -- so the widget
-    has nothing to add. False means Claude Code would ask, which is exactly
-    the case the widget exists for."""
+EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+
+
+def already_settled(tool: str, tool_input: dict, cwd: str, permission_mode: str) -> bool:
+    """True if Claude Code's own settings.json rules (or its live permission
+    mode -- "default"/"acceptEdits"/"auto"/"bypassPermissions"/"plan",
+    toggled at runtime and not reflected in settings.json at all) already
+    decide this one way or the other, with no interactive prompt involved
+    -- so the widget has nothing to add. False means Claude Code would
+    ask, which is exactly the case the widget exists for."""
     try:
         allow, deny, ask, bypass = _load_permission_rules(cwd)
         if any(_rule_matches(r, tool, tool_input, cwd) for r in deny):
@@ -168,7 +173,11 @@ def already_settled(tool: str, tool_input: dict, cwd: str) -> bool:
             return False  # explicit ask rule -- a real prompt is coming
         if any(_rule_matches(r, tool, tool_input, cwd) for r in allow):
             return True
-        return bypass  # nothing matched: bypass mode auto-allows, default asks
+        if permission_mode in ("bypassPermissions", "auto") or bypass:
+            return True
+        if permission_mode == "acceptEdits" and tool in EDIT_TOOLS:
+            return True  # auto-accept edits mode -- file edits don't prompt
+        return False  # nothing settled it: default mode asks
     except Exception:
         return False  # unsure -> let the widget handle it, the safe direction
 
@@ -219,12 +228,19 @@ def main() -> None:
     except Exception:
         sys.exit(0)
 
+    try:
+        with open(os.path.expanduser("~/claude_pill_payload_debug.json"), "a") as f:
+            f.write(json.dumps(data, indent=2) + "\n---\n")
+    except Exception:
+        pass
+
     tool = data.get("tool_name", "Tool")
     tool_input = data.get("tool_input") or {}
     cwd = data.get("cwd", "") or os.getcwd()
+    permission_mode = data.get("permission_mode", "default")
 
-    if already_settled(tool, tool_input, cwd):
-        sys.exit(0)  # already covered by an allow/deny rule -- nothing to ask
+    if already_settled(tool, tool_input, cwd, permission_mode):
+        sys.exit(0)  # already covered by a rule or the live permission mode
 
     if relevant_window_is_frontmost(cwd):
         sys.exit(0)  # already looking at the right window -- just use the terminal
@@ -235,6 +251,7 @@ def main() -> None:
         "tool_name": tool,
         "summary": summarize(tool, tool_input)[:600],
         "detail": json.dumps(tool_input, indent=2)[:2000],
+        "permission_mode": permission_mode,
     }).encode()
 
     try:

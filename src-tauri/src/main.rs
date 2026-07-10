@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+use tauri::menu::{IconMenuItemBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::AppHandle;
 
@@ -19,6 +19,13 @@ const ICON_PENDING_BRIGHT: tauri::image::Image<'_> =
     tauri::include_image!("./icons/tray-pending-bright.png");
 const ICON_PENDING_DIM: tauri::image::Image<'_> =
     tauri::include_image!("./icons/tray-pending-dim.png");
+
+const MODE_ICON_DEFAULT: tauri::image::Image<'_> = tauri::include_image!("./icons/mode-default.png");
+const MODE_ICON_ACCEPT_EDITS: tauri::image::Image<'_> =
+    tauri::include_image!("./icons/mode-accept-edits.png");
+const MODE_ICON_AUTO: tauri::image::Image<'_> = tauri::include_image!("./icons/mode-auto.png");
+const MODE_ICON_BYPASS: tauri::image::Image<'_> = tauri::include_image!("./icons/mode-bypass.png");
+const MODE_ICON_PLAN: tauri::image::Image<'_> = tauri::include_image!("./icons/mode-plan.png");
 
 const HTTP_ADDR: &str = "127.0.0.1:7777";
 // Keep this below the hook "timeout" in settings.json (300s) so we answer
@@ -30,7 +37,18 @@ struct Session {
     id: String,
     cwd: String,
     status: String, // "idle" | "working" | "waiting" | "attention"
+    mode: String, // "default" | "acceptEdits" | "auto" | "bypassPermissions" | "plan"
     updated_at: u64,
+}
+
+fn mode_icon(mode: &str) -> tauri::image::Image<'static> {
+    match mode {
+        "acceptEdits" => MODE_ICON_ACCEPT_EDITS,
+        "auto" => MODE_ICON_AUTO,
+        "bypassPermissions" => MODE_ICON_BYPASS,
+        "plan" => MODE_ICON_PLAN,
+        _ => MODE_ICON_DEFAULT,
+    }
 }
 
 #[derive(Clone)]
@@ -241,7 +259,11 @@ fn rebuild_menu(app: &AppHandle, store: &Arc<Mutex<Store>>) {
             continue; // already shown above with its approval actions
         }
         let label = format!("{} — {}", basename(&s.cwd), s.status);
-        menu = menu.text(format!("open:{}", s.id), label);
+        let row = IconMenuItemBuilder::with_id(format!("open:{}", s.id), label)
+            .icon(mode_icon(&s.mode))
+            .build(app)
+            .unwrap();
+        menu = menu.item(&row);
     }
 
     let quit_item = PredefinedMenuItem::quit(app, Some("Quit Claude Pill")).unwrap();
@@ -258,6 +280,7 @@ fn handle_event(app: &AppHandle, store: &Arc<Mutex<Store>>, body: &Value) {
     let event = body["hook_event_name"].as_str().unwrap_or("");
     let session_id = body["session_id"].as_str().unwrap_or("unknown").to_string();
     let cwd = body["cwd"].as_str().unwrap_or("").to_string();
+    let mode = body["permission_mode"].as_str().unwrap_or("").to_string();
 
     {
         let mut s = store.lock().unwrap();
@@ -276,11 +299,15 @@ fn handle_event(app: &AppHandle, store: &Arc<Mutex<Store>>, body: &Value) {
                 id: session_id.clone(),
                 cwd: cwd.clone(),
                 status: status.clone(),
+                mode: mode.clone(),
                 updated_at: now_ms(),
             });
             entry.status = status;
             if !cwd.is_empty() {
                 entry.cwd = cwd;
+            }
+            if !mode.is_empty() {
+                entry.mode = mode;
             }
             entry.updated_at = now_ms();
         }
@@ -293,6 +320,7 @@ fn handle_approval(app: &AppHandle, store: &Arc<Mutex<Store>>, body: &Value) -> 
     let cwd = body["cwd"].as_str().unwrap_or("").to_string();
     let tool_name = body["tool_name"].as_str().unwrap_or("Tool").to_string();
     let summary = body["summary"].as_str().unwrap_or("").to_string();
+    let mode = body["permission_mode"].as_str().unwrap_or("").to_string();
     let id = format!("apr-{}-{}", now_ms(), &session_id.chars().take(8).collect::<String>());
 
     let (tx, rx) = mpsc::channel::<Value>();
@@ -314,9 +342,13 @@ fn handle_approval(app: &AppHandle, store: &Arc<Mutex<Store>>, body: &Value) -> 
             id: session_id.clone(),
             cwd: cwd.clone(),
             status: "waiting".into(),
+            mode: mode.clone(),
             updated_at: now_ms(),
         });
         entry.status = "waiting".into();
+        if !mode.is_empty() {
+            entry.mode = mode;
+        }
         entry.updated_at = now_ms();
     }
     rebuild_menu(app, store);
