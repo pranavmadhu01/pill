@@ -18,6 +18,7 @@ import fnmatch
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.request
 
@@ -25,6 +26,9 @@ PILL_URL = "http://127.0.0.1:7777/approval"
 # Must be >= the widget's APPROVAL_WAIT_SECS (280) and < the hook "timeout"
 # configured in settings.json (300).
 REQUEST_TIMEOUT = 290
+
+# Apps that plausibly host the terminal driving this Claude Code session.
+TERMINAL_LIKE_APPS = {"Visual Studio Code", "Code", "Cursor", "Terminal", "iTerm2", "iTerm"}
 
 
 def summarize(tool: str, tool_input: dict) -> str:
@@ -169,6 +173,46 @@ def already_settled(tool: str, tool_input: dict, cwd: str) -> bool:
         return False  # unsure -> let the widget handle it, the safe direction
 
 
+# ------------------------------------------------------------ focus check
+#
+# If the user is already looking at the window driving this session, the
+# pill just adds a click they don't need -- let Claude Code's normal
+# terminal prompt handle it instead. Any failure here (no permission
+# granted for System Events yet, osascript missing, etc.) just falls
+# through to showing the widget, the safe direction.
+
+def _frontmost_matches_project(app_name: str, window_title: str, cwd: str) -> bool:
+    if app_name not in TERMINAL_LIKE_APPS:
+        return False
+    project = os.path.basename(cwd.rstrip("/"))
+    return bool(project) and project.lower() in window_title.lower()
+
+
+def relevant_window_is_frontmost(cwd: str) -> bool:
+    script = (
+        'tell application "System Events"\n'
+        "  set frontProc to first application process whose frontmost is true\n"
+        "  set appName to name of frontProc\n"
+        '  set winTitle to ""\n'
+        "  try\n"
+        "    set winTitle to name of front window of frontProc\n"
+        "  end try\n"
+        '  return appName & "|||" & winTitle\n'
+        "end tell"
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=2,
+        )
+        if result.returncode != 0:
+            return False
+        app_name, _, window_title = result.stdout.strip().partition("|||")
+        return _frontmost_matches_project(app_name, window_title, cwd)
+    except Exception:
+        return False
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
@@ -181,6 +225,9 @@ def main() -> None:
 
     if already_settled(tool, tool_input, cwd):
         sys.exit(0)  # already covered by an allow/deny rule -- nothing to ask
+
+    if relevant_window_is_frontmost(cwd):
+        sys.exit(0)  # already looking at the right window -- just use the terminal
 
     payload = json.dumps({
         "session_id": data.get("session_id", ""),

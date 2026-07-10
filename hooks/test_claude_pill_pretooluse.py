@@ -6,7 +6,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from claude_pill_pretooluse import _domain_matches, _path_matches, _rule_matches
+from claude_pill_pretooluse import _domain_matches, _frontmost_matches_project, _path_matches, _rule_matches
 
 
 def t(desc, cond):
@@ -49,5 +49,15 @@ t("subdomain wildcard, single label", _domain_matches("*.example.com", "api.exam
 t("subdomain wildcard rejects extra label", not _domain_matches("*.example.com", "a.b.example.com"))
 t("tld wildcard doesn't cross dots", not _domain_matches("example.*", "example.evil.com"))
 t("bare star matches everything", _domain_matches("*", "anything.at.all"))
+
+# Frontmost-window focus check
+t("matching app and title skips the widget",
+  _frontmost_matches_project("Code", "main.rs — claude-pill", "/Users/user/claude-pill"))
+t("right app, wrong project in title",
+  not _frontmost_matches_project("Code", "main.rs — some-other-repo", "/Users/user/claude-pill"))
+t("right title, non-terminal app doesn't count",
+  not _frontmost_matches_project("Safari", "claude-pill", "/Users/user/claude-pill"))
+t("iTerm counts as terminal-like",
+  _frontmost_matches_project("iTerm2", "~/claude-pill — zsh", "/Users/user/claude-pill"))
 
 print("all checks passed")
