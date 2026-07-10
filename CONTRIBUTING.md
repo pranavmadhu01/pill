@@ -177,6 +177,27 @@ best-effort heuristic like the frontmost-window check), a short comment
 naming the ceiling is more useful than either silence or a defensive
 rewrite — see the existing comments in `main.rs` for the pattern.
 
+## Branching model
+
+Both `main` and `dev` are protected — no direct pushes, everything lands via
+PR:
+
+- **`dev`** is where work lands day to day. PRs into it are **squash-merged
+  only**, so branch history on `dev` stays one commit per PR.
+- **`main`** only moves via a PR from `dev`, **merge-commit only** — that PR
+  is effectively a release cut.
+
+To contribute:
+```bash
+git checkout dev && git pull
+git checkout -b your-feature-name
+# ... commit your changes ...
+git push -u origin your-feature-name
+gh pr create --base dev --head your-feature-name
+```
+Once that's merged (squashed) into `dev` and things look good there, `dev`
+gets PR'd into `main` (merge commit) to cut a release.
+
 ## Submitting changes
 
 - Keep commits focused and describe the *why*, not just the *what*.
