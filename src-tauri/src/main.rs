@@ -7,11 +7,18 @@
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::AppHandle;
+
+const ICON_IDLE: tauri::image::Image<'_> = tauri::include_image!("./icons/tray-idle.png");
+const ICON_PENDING_BRIGHT: tauri::image::Image<'_> =
+    tauri::include_image!("./icons/tray-pending-bright.png");
+const ICON_PENDING_DIM: tauri::image::Image<'_> =
+    tauri::include_image!("./icons/tray-pending-dim.png");
 
 const HTTP_ADDR: &str = "127.0.0.1:7777";
 // Keep this below the hook "timeout" in settings.json (300s) so we answer
@@ -105,12 +112,46 @@ fn open_project(cwd: &str) {
 // Legacy NSUserNotificationCenter can't post under an arbitrary bundle's
 // identity from a bare dev binary -- only a real .app bundle running its
 // own executable can. Below that, notifications silently no-op; the tray
-// icon's "●" title is the fallback signal in dev mode.
+// icon's pulsing glow is the fallback signal in dev mode.
 #[cfg(target_os = "macos")]
 fn running_from_app_bundle() -> bool {
     std::env::current_exe()
         .map(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
         .unwrap_or(false)
+}
+
+// ------------------------------------------------------------- tray animation
+
+const PULSE_INTERVAL_MS: u64 = 600;
+static ANIMATING: AtomicBool = AtomicBool::new(false);
+
+// Pulses the tray icon between a bright and dim orange glow while any
+// approval is pending, reverting to the plain idle icon once none remain.
+// (tray-icon's set_title(None) is a no-op on macOS, so an icon swap -- not
+// title text -- is what actually clears reliably.) The AtomicBool guard
+// keeps this to one thread even if several approvals arrive close together.
+fn start_pending_glow(app: &AppHandle, store: Arc<Mutex<Store>>) {
+    if ANIMATING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let Some(tray) = app.tray_by_id("main") else {
+            ANIMATING.store(false, Ordering::SeqCst);
+            return;
+        };
+        let _ = tray.set_icon_as_template(false);
+        let mut bright = true;
+        while !store.lock().unwrap().approvals.is_empty() {
+            let icon = if bright { ICON_PENDING_BRIGHT } else { ICON_PENDING_DIM };
+            let _ = tray.set_icon(Some(icon));
+            bright = !bright;
+            std::thread::sleep(Duration::from_millis(PULSE_INTERVAL_MS));
+        }
+        let _ = tray.set_icon(Some(ICON_IDLE));
+        let _ = tray.set_icon_as_template(true);
+        ANIMATING.store(false, Ordering::SeqCst);
+    });
 }
 
 // --------------------------------------------------------------- notification
@@ -135,6 +176,7 @@ fn notify_approval_pending(app: &AppHandle, store: Arc<Mutex<Store>>, approval_i
         while store.lock().unwrap().waiters.contains_key(&approval_id) {
             let mut opts = mac_notification_sys::Notification::new();
             opts.wait_for_click(true);
+            opts.default_sound();
             let response = mac_notification_sys::send_notification(&title, None, &body, Some(&opts));
             if matches!(response, Ok(mac_notification_sys::NotificationResponse::Click)) {
                 if let Some(tray) = app.tray_by_id("main") {
@@ -278,9 +320,7 @@ fn handle_approval(app: &AppHandle, store: &Arc<Mutex<Store>>, body: &Value) -> 
         entry.updated_at = now_ms();
     }
     rebuild_menu(app, store);
-    if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_title(Some("●"));
-    }
+    start_pending_glow(app, store.clone());
     notify_approval_pending(
         app,
         store.clone(),
@@ -295,7 +335,7 @@ fn handle_approval(app: &AppHandle, store: &Arc<Mutex<Store>>, body: &Value) -> 
         .recv_timeout(Duration::from_secs(APPROVAL_WAIT_SECS))
         .unwrap_or_else(|_| json!({ "decision": "passthrough", "reason": "Timed out in Claude Pill" }));
 
-    let still_waiting = {
+    {
         let mut s = store.lock().unwrap();
         s.approvals.remove(&id);
         s.waiters.remove(&id);
@@ -306,14 +346,8 @@ fn handle_approval(app: &AppHandle, store: &Arc<Mutex<Store>>, body: &Value) -> 
                 sess.updated_at = now_ms();
             }
         }
-        still_waiting
-    };
-    rebuild_menu(app, store);
-    if !still_waiting {
-        if let Some(tray) = app.tray_by_id("main") {
-            let _ = tray.set_title(None::<&str>);
-        }
     }
+    rebuild_menu(app, store);
     decision
 }
 
@@ -393,9 +427,8 @@ fn main() {
                 let _ = mac_notification_sys::set_application("com.claudepill.app");
             }
 
-            let icon = app.default_window_icon().expect("no default icon").clone();
             TrayIconBuilder::with_id("main")
-                .icon(icon)
+                .icon(ICON_IDLE)
                 .icon_as_template(true)
                 .tooltip("Claude Pill")
                 .build(app)?;
