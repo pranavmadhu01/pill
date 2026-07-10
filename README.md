@@ -1,143 +1,112 @@
-# Pill
+<p align="center">
+  <img src="src-tauri/icons/icon.png" width="120" alt="Pill icon">
+</p>
 
-*An unofficial, open-source menu bar companion for [Claude Code](https://docs.claude.com/en/docs/claude-code) — not affiliated with or endorsed by Anthropic.*
+<h1 align="center">Pill</h1>
 
-A macOS menu bar utility that shows what your Claude Code sessions are doing
-and lets you **Allow / Deny a pending tool call right from the menu bar** —
-no tabbing back to the terminal, and no custom floating window to fight with
-Spaces or full-screen apps.
+<p align="center">
+  <em>A macOS menu bar companion for <a href="https://docs.claude.com/en/docs/claude-code">Claude Code</a></em>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS-black?logo=apple&logoColor=white" alt="macOS only">
+  <img src="https://img.shields.io/badge/Anthropic-Unofficial-CC785C" alt="Unofficial, not affiliated with Anthropic">
+  <img src="https://img.shields.io/badge/Windows%20%2F%20Linux-planned-lightgrey" alt="Windows and Linux planned">
+</p>
+
+<p align="center">
+  <a href="#install"><b>Install</b></a> ·
+  <a href="#features"><b>Features</b></a> ·
+  <a href="#things-to-know"><b>Things to know</b></a> ·
+  <a href="CONTRIBUTING.md"><b>Contributing</b></a>
+</p>
+
+---
+
+Claude Code sometimes needs to ask you something — can it run this command,
+can it edit this file — and if you've tabbed away, that question is easy to
+miss. Pill sits in your menu bar and puts that question right in front of
+you, wherever you are: a notification, a pulsing icon, and Allow/Deny
+buttons, no matter which Space or full-screen app you're currently in.
+
+*Unofficial and not affiliated with or endorsed by Anthropic.*
+
+## What it looks like
 
 ```
                                     🔵 status
   ┌──────────────────────────────────────┐
-  │ Bash · rm -rf node_modules && npm i  │   ← disabled header, just context
+  │ Bash · rm -rf node_modules && npm i  │   ← what Claude wants to run
   │ Allow                                │
   │ Deny                                 │
-  │ Answer in Terminal                   │   ← also focuses the right VS Code window
+  │ Answer in Terminal                   │
   │ ─────────────────────────────────────│
   │ other-repo — working    [auto]       │   ← click = open in VS Code
   └──────────────────────────────────────┘
 ```
 
-It's a plain `NSStatusItem` + native `NSMenu` — deliberately not a custom
-window. An earlier version was a floating always-on-top panel, which turned
-into a long fight with macOS Spaces, full-screen apps, and window transparency
-that never fully worked. The tray icon + native menu sidesteps all of it for
-free, the same way Wi-Fi/Bluetooth/Docker's menu bar items do.
+## Features
 
-## How it works
+- **Never miss a permission prompt** — a macOS notification (with sound, and
+  Allow/Deny buttons right on it) follows you across Spaces and full-screen
+  apps, re-announcing every ~12s until you answer.
+- **Answer without touching the terminal** — Allow, Deny, or click through to
+  the tray menu for more context, all from the menu bar.
+- **Only interrupts when it actually needs to.** If Claude Code would've
+  silently allowed the call anyway — an existing permission rule, auto-accept
+  mode, or you're already looking at the right editor/terminal window — Pill
+  gets out of the way and lets the normal flow happen.
+- **See all your sessions at a glance** — repo, status (working/idle/waiting),
+  and current permission mode, right in the menu.
+- **One click to jump to the right VS Code window** — reuses an already-open
+  window instead of spawning a duplicate.
+- **Launch at login**, native macOS look (a real `NSStatusItem` + `NSMenu` —
+  no custom window fighting with Spaces or transparency).
 
-- The app runs a local HTTP server on `127.0.0.1:7777`.
-- Claude Code **hooks** (configured in `~/.claude/settings.json`, see Setup)
-  talk to it:
-  - `PreToolUse` → POSTs the pending tool call to `/approval` and **blocks**.
-    Before ever contacting the widget, the hook (`hooks/pill_pretooluse.py`)
-    checks three things, each of which can skip the widget entirely and let
-    Claude Code's own flow handle it silently:
-    1. **Does an existing `permissions.allow`/`deny`/`ask` rule in settings.json
-       already cover this call?** (replicates Claude Code's own rule matching —
-       Bash prefix/wildcard patterns, gitignore-style file globs, domain
-       wildcards for WebFetch)
-    2. **Is the live session permission mode** (`default` / `acceptEdits` /
-       `auto` / `bypassPermissions` / `plan`, toggled via Shift+Tab and *not*
-       reflected in settings.json at all) **already permissive enough?**
-    3. **Are you already looking at the right window?** — if the frontmost
-       app is VS Code/Cursor/Terminal/iTerm *and* its window title matches
-       the project, there's no point routing through the menu; let the
-       terminal prompt handle it.
+## Install
 
-    If none of those settle it, the request goes to the widget, which shows
-    Allow / Deny / Answer in Terminal in the tray menu and fires a macOS
-    notification with real Allow/Deny action buttons and sound (re-announced
-    every ~12s until resolved, since banners auto-dismiss in a couple seconds
-    — clicking the notification body instead of a button pops the menu open).
-    The hook returns the decision to Claude Code (`permissionDecision:
-    allow|deny`). Answering in the terminal (or a timeout, or the widget not
-    running) makes the hook exit silently, so Claude Code falls back to its
-    normal terminal prompt — the widget can never lock you out.
-  - `SessionStart / UserPromptSubmit / Stop / Notification / SessionEnd` →
-    fire-and-forget POSTs to `/event` (`hooks/pill_event.py`), which is
-    how the menu knows each session's repo, status (working / idle / needs
-    attention), and current permission mode.
-- The tray icon itself pulses an orange glow while an approval is pending
-  (plain icon otherwise), and each session row shows its permission mode as a
-  small colored pill-shaped chip.
-- "Open in VS Code" / "Answer in Terminal" hit VS Code's own CLI script
-  directly (`.../Visual Studio Code.app/Contents/Resources/app/bin/code`, so
-  it works without `code` on `PATH`) rather than `open -a`, because `open -a`
-  goes through macOS's generic document-open path and skips VS Code's
-  "already open somewhere? focus that window" logic — `open -a` was
-  reliably opening duplicate windows instead of reusing the existing one.
-- "Launch at Login" in the menu toggles a real `LaunchAgent`, checked state
-  reflects the actual current registration.
+**1. Download the latest release** (a `.dmg`) from the Releases page, open
+it, and drag **Pill.app** into **Applications**. It isn't code-signed or
+notarized yet, so on first launch macOS will refuse to open it — right-click
+(or Control-click) **Pill.app** and choose **Open**, then confirm once in
+the dialog that appears. You only need to do this the first time.
 
-## Setup
-
-**1. Prerequisites:** Rust (`rustup`), Node.js, Xcode Command Line Tools.
-
-**2. Install dependencies**
+**2. Launch it once**, then run this one command in Terminal to wire up the
+Claude Code hooks — it's bundled inside the app, so there's nothing else to
+download or clone:
 ```bash
-cd pill
-npm install
+python3 "/Applications/Pill.app/Contents/Resources/hooks/install.py"
 ```
+This copies the hook scripts to `~/.claude/hooks` and registers them in
+`~/.claude/settings.json` (backing it up first, and leaving any hooks you
+already have for other tools untouched). Safe to re-run any time.
 
-**3. Symlink the hooks** (not a copy — this keeps edits to the scripts live
-without needing to redeploy every time):
-```bash
-mkdir -p ~/.claude/hooks
-ln -s "$(pwd)/hooks/pill_pretooluse.py" ~/.claude/hooks/pill_pretooluse.py
-ln -s "$(pwd)/hooks/pill_event.py" ~/.claude/hooks/pill_event.py
-```
-Then merge `hooks/settings.snippet.json` into `~/.claude/settings.json`
-(create it if it doesn't exist). If you already have hooks configured, append
-these entries to the matching arrays rather than replacing them. Unlike the
-`.py` scripts, this JSON merge is **not** kept in sync automatically — if you
-ever change `settings.snippet.json` (new hook event, different matcher),
-re-merge it by hand.
+**3. Restart your Claude Code sessions** so they pick up the new hooks.
+That's it — Pill is now in your menu bar.
 
-**4. Run it as a real app bundle, not `tauri dev`.** Notifications need a
-genuine `.app` bundle to post under their own identity — an unbundled dev
-binary can't (legacy `NSUserNotificationCenter` silently no-ops for
-impersonated/unregistered bundle IDs). `tauri dev`/`cargo run` still works
-for iterating on everything else (menu, icons, hook logic), just without
-notifications; the pulsing tray icon still works either way.
-```bash
-npm run tauri build -- --debug   # fast iteration build
-# or, for a real release build:
-npm run tauri icon src-tauri/icons/icon.png   # regenerate app icon sizes first
-npm run tauri build
-open "src-tauri/target/release/bundle/macos/Pill.app"   # (or .../debug/... )
-```
-For everyday use, copy `Pill.app` into `/Applications` first, launch it from
-there, *then* turn on "Launch at Login" — that way the login item points at
-a stable path instead of a build folder that `cargo clean` can wipe out.
-
-**5. Restart Claude Code** sessions so they pick up the hooks.
+Turn on "Launch at Login" from the tray menu whenever you're ready for it to
+start automatically.
 
 ## Things to know
 
-- **Timeouts are layered on purpose:** widget waits 280s → hook HTTP timeout
-  290s → hook timeout in settings.json 300s. If nothing resolves it in time,
-  everything falls through to the normal terminal prompt.
-- Plan-mode questions and multi-choice prompts surface via the `Notification`
-  hook as an "attention" status on the session; answer those in the terminal
-  — click the session row to jump to VS Code.
-- Port is hardcoded to `7777` in `src-tauri/src/main.rs` (`HTTP_ADDR`) and
-  both hook scripts — change all three together.
-- Menu item icons only support a leading (left) image — that's a hard
-  `NSMenuItem` limitation, not something we chose; a trailing icon would mean
-  dropping to a fully custom `NSView`-based item.
+- **Timeouts are layered on purpose:** Pill waits up to 280s for you to
+  respond. If you don't, it falls through to Claude Code's normal terminal
+  prompt — Pill can never lock you out of a session.
+- Plan-mode questions and multi-choice prompts still need the terminal for
+  now — Pill flags the session as needing attention, but click through to
+  answer there.
 - macOS tucks notification action buttons behind an Options/hover reveal by
-  default for this notification API — that's a system presentation choice,
-  not something this app controls.
-- Hook payload fields and the `PreToolUse` decision schema are current as of
-  mid-2026; if a Claude Code update changes them, check
-  https://docs.claude.com/en/docs/claude-code (hooks reference) and adjust
-  `pill_pretooluse.py`.
+  default — that's a system presentation choice, not something Pill controls.
+
+## Contributing
+
+Bug reports and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for
+how the project is put together, how to run it locally, and a few
+hard-won gotchas worth knowing before you dig in.
 
 ## Roadmap ideas
 
 - "Allow & remember" — write the matched pattern straight into
   `permissions.allow` from the menu, so repeated approvals taper off
-- Windows (toast fallback) and Linux builds — the Rust/hook core not tied to
-  a window is already most of the way there
+- Windows (toast fallback) and Linux builds — the Rust/hook core isn't tied
+  to a window and is already most of the way there

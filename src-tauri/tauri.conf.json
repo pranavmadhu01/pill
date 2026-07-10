@@ -18,6 +18,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../hooks/install.py": "hooks/install.py",
+      "../hooks/pill_pretooluse.py": "hooks/pill_pretooluse.py",
+      "../hooks/pill_event.py": "hooks/pill_event.py",
+      "../hooks/settings.snippet.json": "hooks/settings.snippet.json"
+    }
   }
 }
