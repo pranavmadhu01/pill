@@ -27,8 +27,14 @@ PILL_URL = "http://127.0.0.1:7777/approval"
 # configured in settings.json (300).
 REQUEST_TIMEOUT = 290
 
-# Apps that plausibly host the terminal driving this Claude Code session.
-TERMINAL_LIKE_APPS = {"Visual Studio Code", "Code", "Cursor", "Terminal", "iTerm2", "iTerm"}
+# Apps that plausibly host the terminal driving this Claude Code session --
+# macOS app names (as reported by System Events) and Windows process
+# basenames (lowercased before matching, see _frontmost_windows) in one set,
+# since the two naming schemes never collide.
+TERMINAL_LIKE_APPS = {
+    "Visual Studio Code", "Code", "Cursor", "Terminal", "iTerm2", "iTerm",
+    "code.exe", "cursor.exe", "windowsterminal.exe", "cmd.exe", "powershell.exe", "pwsh.exe",
+}
 
 
 def summarize(tool: str, tool_input: dict) -> str:
@@ -197,7 +203,7 @@ def _frontmost_matches_project(app_name: str, window_title: str, cwd: str) -> bo
     return bool(project) and project.lower() in window_title.lower()
 
 
-def relevant_window_is_frontmost(cwd: str) -> bool:
+def _frontmost_macos():
     script = (
         'tell application "System Events"\n'
         "  set frontProc to first application process whose frontmost is true\n"
@@ -209,15 +215,70 @@ def relevant_window_is_frontmost(cwd: str) -> bool:
         '  return appName & "|||" & winTitle\n'
         "end tell"
     )
+    result = subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True, text=True, timeout=2,
+    )
+    if result.returncode != 0:
+        return None
+    app_name, _, window_title = result.stdout.strip().partition("|||")
+    return app_name, window_title
+
+
+# ponytail: ctypes + user32/kernel32 directly -- stdlib only, no reason to
+# pull in pywin32 just to read the foreground window's title and owning
+# process name. Not verified against a real Windows box yet (no local
+# toolchain); a wrong result here just means the widget always shows
+# instead of skipping it (the safe direction), so worth a manual check on
+# the Windows VM but not a correctness risk either way.
+def _frontmost_windows():
+    import ctypes
+    import ctypes.wintypes as wintypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return None
+
+    length = user32.GetWindowTextLengthW(hwnd)
+    buf = ctypes.create_unicode_buffer(length + 1)
+    user32.GetWindowTextW(hwnd, buf, length + 1)
+
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+    if not handle:
+        return None
     try:
-        result = subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=2,
-        )
-        if result.returncode != 0:
+        path_buf = ctypes.create_unicode_buffer(260)
+        size = wintypes.DWORD(260)
+        if not kernel32.QueryFullProcessImageNameW(handle, 0, path_buf, ctypes.byref(size)):
+            return None
+        exe_name = os.path.basename(path_buf.value).lower()
+    finally:
+        kernel32.CloseHandle(handle)
+
+    return exe_name, buf.value
+
+
+def relevant_window_is_frontmost(cwd: str) -> bool:
+    try:
+        if sys.platform == "darwin":
+            frontmost = _frontmost_macos()
+        elif sys.platform == "win32":
+            frontmost = _frontmost_windows()
+        else:
             return False
-        app_name, _, window_title = result.stdout.strip().partition("|||")
-        return _frontmost_matches_project(app_name, window_title, cwd)
+        if not frontmost:
+            return False
+        name, window_title = frontmost
+        return _frontmost_matches_project(name, window_title, cwd)
     except Exception:
         return False
 

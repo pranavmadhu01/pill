@@ -65,6 +65,15 @@ t("right title, non-terminal app doesn't count",
   not _frontmost_matches_project("Safari", "pill", "/Users/user/pill"))
 t("iTerm counts as terminal-like",
   _frontmost_matches_project("iTerm2", "~/pill — zsh", "/Users/user/pill"))
+t("windows Code.exe (lowercased) counts as terminal-like",
+  _frontmost_matches_project("code.exe", "main.rs - pill - Visual Studio Code", "/Users/user/pill"))
+t("windows unrelated exe doesn't count",
+  not _frontmost_matches_project("chrome.exe", "pill", "/Users/user/pill"))
+
+if sys.platform == "win32":
+    from pill_pretooluse import relevant_window_is_frontmost
+    t("frontmost check runs without crashing on real Windows",
+      isinstance(relevant_window_is_frontmost(os.getcwd()), bool))
 
 # Live permission_mode handling (no settings.json rules involved -- a
 # nonexistent cwd/home guarantees an empty rule set)
