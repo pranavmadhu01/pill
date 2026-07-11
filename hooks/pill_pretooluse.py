@@ -130,7 +130,10 @@ def _path_matches(pattern: str, file_path: str, cwd: str) -> bool:
     else:
         candidate = os.path.relpath(abs_path, cwd)
         glob_pattern = pattern[2:] if pattern.startswith("./") else pattern
-    return re.match(_glob_to_regex(glob_pattern), candidate) is not None
+    # candidate comes from abspath/relpath, both OS-native separators --
+    # normalize to "/" since _glob_to_regex's patterns are gitignore-style
+    # and assume forward slashes regardless of platform.
+    return re.match(_glob_to_regex(glob_pattern), candidate.replace(os.sep, "/")) is not None
 
 
 _RULE_RE = re.compile(r"^([A-Za-z]+)(?:\((.*)\))?$")
