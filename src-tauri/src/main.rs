@@ -122,9 +122,22 @@ fn open_project(cwd: &str) {
                 .spawn();
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("code").arg(cwd).spawn();
+        // VS Code on Windows puts `code.cmd`, not `code.exe`, on PATH --
+        // Command::new resolves via CreateProcess directly and doesn't do
+        // the PATHEXT lookup a real shell does, so it can't find a bare
+        // "code" the way typing it in a terminal would. Route through
+        // cmd.exe so that resolution actually happens. `-r` reuses the
+        // last active window, same end result as the mac CLI-script trick
+        // above via VS Code's own documented flag instead.
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "code", "-r", cwd])
+            .spawn();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = std::process::Command::new("code").arg("-r").arg(cwd).spawn();
     }
 }
 

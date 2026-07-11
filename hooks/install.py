@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Pill setup — run this once after installing Pill.app:
+"""Pill setup — run this once after installing Pill (see README):
 
-    python3 "/Applications/Pill.app/Contents/Resources/hooks/install.py"
+    python3 "/Applications/Pill.app/Contents/Resources/hooks/install.py"   (macOS)
+    python "<install dir>\\resources\\hooks\\install.py"                    (Windows)
 
 Copies the hook scripts to ~/.claude/hooks and registers them in
 ~/.claude/settings.json. Safe to re-run: skips anything already
@@ -10,6 +11,7 @@ registered, and backs up settings.json before writing to it.
 import json
 import os
 import shutil
+import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -33,9 +35,36 @@ def load_json(path):
         return json.load(f) or {}
 
 
-def already_registered(existing_entries, command):
+def _quote(s: str) -> str:
+    # Hook commands are handed to a shell by Claude Code -- quote for
+    # whichever one actually runs them rather than relying on `~` expansion
+    # or leaving a path with spaces unquoted, neither of which is a safe bet
+    # on Windows.
+    if os.name == "nt":
+        return f'"{s}"' if " " in s else s
+    import shlex
+    return shlex.quote(s)
+
+
+def _hook_basename(command: str) -> str:
+    if not command:
+        return ""
+    last_token = command.replace("\\", "/").split()[-1].strip('"')
+    return os.path.basename(last_token)
+
+
+def _build_command(filename: str) -> str:
+    # sys.executable is whatever interpreter is running this script right
+    # now -- always resolvable, unlike hardcoding "python3" (missing by
+    # that name on a typical Windows install) or trusting `~` to expand.
+    interpreter = sys.executable or ("python" if os.name == "nt" else "python3")
+    hook_path = os.path.join(HOOKS_DIR, filename)
+    return f"{_quote(interpreter)} {_quote(hook_path)}"
+
+
+def already_registered(existing_entries, filename):
     return any(
-        h.get("command") == command
+        _hook_basename(h.get("command")) == filename
         for entry in existing_entries
         for h in entry.get("hooks", [])
     )
@@ -47,10 +76,16 @@ def merge_hooks(settings, snippet_hooks):
     for event, entries in snippet_hooks.items():
         existing = settings["hooks"].setdefault(event, [])
         for entry in entries:
-            commands = [h.get("command") for h in entry.get("hooks", [])]
-            if not any(already_registered(existing, cmd) for cmd in commands):
-                existing.append(entry)
-                changed = True
+            filenames = [_hook_basename(h.get("command")) for h in entry.get("hooks", [])]
+            if any(already_registered(existing, name) for name in filenames):
+                continue
+            new_entry = dict(entry)
+            new_entry["hooks"] = [
+                {**h, "command": _build_command(_hook_basename(h.get("command")))}
+                for h in entry.get("hooks", [])
+            ]
+            existing.append(new_entry)
+            changed = True
     return changed
 
 
