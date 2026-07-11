@@ -121,7 +121,12 @@ def _path_matches(pattern: str, file_path: str, cwd: str) -> bool:
         return False
     abs_path = os.path.abspath(os.path.join(cwd, file_path))
     if pattern.startswith("//"):
-        candidate, glob_pattern = abs_path, pattern[1:]
+        # "//"-prefixed patterns are POSIX-flavored absolute paths (match
+        # from filesystem root) -- drop a Windows drive letter so they're
+        # drive-agnostic there too. Under-matching here just means the
+        # widget shows up instead of being skipped, the safe direction.
+        _, _, no_drive = abs_path.partition(":")
+        candidate, glob_pattern = (no_drive or abs_path), pattern[1:]
     elif pattern.startswith("~/"):
         candidate, glob_pattern = abs_path, os.path.expanduser(pattern)
     elif "/" not in pattern:
