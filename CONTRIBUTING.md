@@ -24,16 +24,17 @@ src-tauri/icons/              tray icons, mode badges, app icon (see below —
 ```
 
 There's no frontend — no window, no webview, no JS at all. Everything is a
-native `NSStatusItem` + `NSMenu`, built directly with `tauri::tray` /
-`tauri::menu`.
+native tray icon + menu, built directly with `tauri::tray` / `tauri::menu`
+(`NSStatusItem`/`NSMenu` on macOS, the Windows shell notification area on
+Windows).
 
-Everything under `hooks/` ships inside the built app too, at
-`Pill.app/Contents/Resources/hooks/` (see `bundle.resources` in
-`tauri.conf.json`) — that's what `hooks/install.py` copies from when an end
-user runs it after installing a release build. If you add a new file under
-`hooks/` that end users need, add it to that resources map too, or it'll
-work for you locally (symlinked) and silently be missing for anyone who
-just downloaded the app.
+Everything under `hooks/` ships inside the built app too — at
+`Pill.app/Contents/Resources/hooks/` on macOS, `resources\hooks\` next to
+the executable on Windows (see `bundle.resources` in `tauri.conf.json`) —
+that's what `hooks/install.py` copies from when an end user runs it after
+installing a release build. If you add a new file under `hooks/` that end
+users need, add it to that resources map too, or it'll work for you locally
+(symlinked) and silently be missing for anyone who just downloaded the app.
 
 ## How it works
 
@@ -53,15 +54,18 @@ to it:
      and never written to settings.json) already permissive enough?
   3. Is the frontmost app + window title already the project in question
      (`relevant_window_is_frontmost()`, via a `System Events` AppleScript
-     query)? If you're already looking at the right editor/terminal, the
-     terminal prompt is simpler than routing through a menu.
+     query on macOS, `user32`/`kernel32` via `ctypes` on Windows)? If you're
+     already looking at the right editor/terminal, the terminal prompt is
+     simpler than routing through a menu.
 
   If none of those settle it, the request reaches the app: the tray menu
-  gets an Allow/Deny/Answer-in-Terminal row, and a notification fires (with
-  real action buttons, sound, and a retry loop re-announcing every ~12s
-  until it's resolved — legacy `NSUserNotificationCenter` banners auto-dismiss
-  in a couple seconds, so one announcement is easy to miss entirely). The
-  hook returns the decision to Claude Code as `hookSpecificOutput.permissionDecision`.
+  gets an Allow/Deny/Answer-in-Terminal row, and a notification fires, with a
+  retry loop re-announcing every ~12s until it's resolved (banners auto-
+  dismiss on their own in a few seconds, so one announcement is easy to miss
+  entirely). On macOS it has real Allow/Deny action buttons and sound right
+  on the banner; on Windows it's currently a plain toast (title/body only —
+  clicking it opens the tray menu instead). The hook returns the decision to
+  Claude Code as `hookSpecificOutput.permissionDecision`.
   Answering in the terminal instead (or a timeout, or the app not running at
   all) makes the hook exit with no output, so Claude Code falls through to
   its normal terminal prompt — the app can never lock a session out.
@@ -81,12 +85,16 @@ macOS notifications will not work in dev mode** — the legacy notification API
 this app uses (`mac-notification-sys`) can't post under an impersonated
 identity from an unbundled dev binary, only from a genuine `.app`. The tray
 icon's pulsing glow still works either way, so most changes are still
-visible without a full build.
+visible without a full build. (Windows notifications via
+`tauri-winrt-notification` haven't been checked specifically in `tauri dev`
+mode yet — only via a built installer — so the same caveat may or may not
+apply there too.)
 
 To test notifications specifically, build and run the real bundle:
 ```bash
 npm run tauri build -- --debug
-open src-tauri/target/debug/bundle/macos/Pill.app
+open src-tauri/target/debug/bundle/macos/Pill.app        # macOS
+# Windows: run src-tauri/target/debug/bundle/nsis/*.exe or msi/*.msi instead
 ```
 
 **Point Claude Code at your working copy** by symlinking the hooks (not
@@ -114,6 +122,13 @@ There's no Rust test suite beyond compilation — the interesting logic (rule
 matching, permission modes, frontmost-window detection) lives in the Python
 hook and is covered there. If you add non-trivial branching logic anywhere,
 add it to the relevant test file rather than skipping coverage.
+
+CI (`.github/workflows/build.yml`) runs both Python test files and the full
+`tauri build` on a `windows-latest` runner in addition to macOS, on every
+push/PR to `dev`/`main`. If you don't have Windows hardware (most
+contributors won't), that's the real check for anything touching
+cross-platform code — path separators and drive letters have already caught
+real bugs there that macOS-only testing had no way to see.
 
 ## Gotchas worth knowing before you dig in
 
@@ -167,6 +182,25 @@ real cause turned up — hopefully this saves you the loop.
   are `xattr -cr` (what the README/release notes tell users to run) or
   actually notarizing with a paid Apple Developer ID — there's no free way
   to make this fully clean.
+- **`Command::new("code")` can't find VS Code on Windows.** VS Code's
+  installer puts `code.cmd`, not `code.exe`, on PATH — `CreateProcess`
+  (what `std::process::Command` calls under the hood on Windows) doesn't do
+  the PATHEXT-based shell resolution needed to find a bare `.cmd` shim, a
+  well-known Rust-on-Windows gotcha. `open_project()` in `main.rs` routes
+  through `cmd /C` for this reason.
+- **`os.path.relpath`/`abspath` use OS-native separators, but
+  `_glob_to_regex()`'s patterns are always forward-slash, gitignore-style.**
+  `_path_matches()` in `pill_pretooluse.py` normalizes with
+  `.replace(os.sep, "/")` before matching — skip that and every non-trivial
+  file-path rule silently fails to match on Windows. Same story for a
+  Windows absolute path's drive letter (`D:\...`) against a `//`-prefixed,
+  drive-agnostic pattern — stripped before comparing, for the same reason.
+  Both were caught by CI's `windows-latest` job, not by hand.
+- **Don't hardcode `python3` in a hook command registered for end users.**
+  A typical Windows Python install doesn't reliably expose a `python3` on
+  PATH the way macOS/Linux do. `install.py` uses `sys.executable` instead —
+  whatever interpreter is running the install script is guaranteed to
+  resolve, unlike guessing a name.
 
 ## Code style
 
