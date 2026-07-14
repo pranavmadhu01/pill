@@ -122,9 +122,22 @@ fn open_project(cwd: &str) {
                 .spawn();
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("code").arg(cwd).spawn();
+        // VS Code on Windows puts `code.cmd`, not `code.exe`, on PATH --
+        // Command::new resolves via CreateProcess directly and doesn't do
+        // the PATHEXT lookup a real shell does, so it can't find a bare
+        // "code" the way typing it in a terminal would. Route through
+        // cmd.exe so that resolution actually happens. `-r` reuses the
+        // last active window, same end result as the mac CLI-script trick
+        // above via VS Code's own documented flag instead.
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "code", "-r", cwd])
+            .spawn();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = std::process::Command::new("code").arg("-r").arg(cwd).spawn();
     }
 }
 
@@ -222,7 +235,52 @@ fn notify_approval_pending(app: &AppHandle, store: Arc<Mutex<Store>>, approval_i
     });
 }
 
-#[cfg(not(target_os = "macos"))]
+// Windows toast, no action buttons yet (see roadmap) -- clicking the toast
+// body (the only click there is, for now) pops the tray menu open, same as
+// the mac Click case below. Toasts are event-driven rather than blocking
+// like mac_notification_sys, so a channel stands in for the blocking wait:
+// on_activated fires on a WinRT callback thread and signals the retry loop
+// via `tx` rather than returning a value directly.
+//
+// ponytail: AUMID is reused from tauri.conf.json's identifier, unverified
+// against a real Windows box (branding/whether it silently no-ops without a
+// registered Start Menu shortcut needs a manual check on the Windows VM).
+// Upgrade path to real Allow/Deny buttons is `add_button` + branching on
+// `Some(action)` in on_activated -- deferred until this baseline is confirmed
+// working.
+#[cfg(target_os = "windows")]
+fn notify_approval_pending(app: &AppHandle, store: Arc<Mutex<Store>>, approval_id: String, title: String, body: String) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        while store.lock().unwrap().waiters.contains_key(&approval_id) {
+            let (tx, rx) = mpsc::channel::<bool>();
+            let app_cb = app.clone();
+            let shown = tauri_winrt_notification::Toast::new("com.pill.widget")
+                .title(&title)
+                .text1(&body)
+                .on_activated(move |action| {
+                    if action.is_none() {
+                        // body click, no button -- same as mac: stop
+                        // re-announcing and let the tray menu take over
+                        if let Some(tray) = app_cb.tray_by_id("main") {
+                            let _ = tray.with_inner_tray_icon(|icon| icon.show_menu());
+                        }
+                        let _ = tx.send(true);
+                    }
+                    Ok(())
+                })
+                .show();
+            if shown.is_err() {
+                break; // toast API unavailable -- tray glow is the fallback signal
+            }
+            if rx.recv_timeout(Duration::from_secs(NOTIFY_RETRY_SECS)) == Ok(true) {
+                break;
+            }
+        }
+    });
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn notify_approval_pending(
     _app: &AppHandle,
     _store: Arc<Mutex<Store>>,
