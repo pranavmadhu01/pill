@@ -218,7 +218,11 @@ def _frontmost_macos():
         "  set appName to name of frontProc\n"
         '  set winTitle to ""\n'
         "  try\n"
-        "    set winTitle to name of front window of frontProc\n"
+        # "front window" is just the first window in the process's AX window
+        # list, which for Electron apps (VS Code, Cursor) is often a
+        # phantom untitled window rather than the visible one -- AXMain
+        # reliably identifies the real main window instead.
+        '    set winTitle to name of (first window of frontProc whose value of attribute "AXMain" is true)\n'
         "  end try\n"
         '  return appName & "|||" & winTitle\n'
         "end tell"
