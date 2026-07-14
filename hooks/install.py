@@ -10,7 +10,9 @@ registered, and backs up settings.json before writing to it.
 """
 import json
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 import time
 
@@ -42,7 +44,6 @@ def _quote(s: str) -> str:
     # on Windows.
     if os.name == "nt":
         return f'"{s}"' if " " in s else s
-    import shlex
     return shlex.quote(s)
 
 
@@ -70,6 +71,21 @@ def already_registered(existing_entries, filename):
     )
 
 
+def _repair_stale_commands(existing_entries, filename):
+    # A matching filename can already be registered with a stale command --
+    # wrong interpreter after a Python upgrade, or a hardcoded python3/~
+    # that never resolves on this OS. Rewrite it in place instead of just
+    # skipping, so re-running install.py actually fixes a broken hook.
+    expected = _build_command(filename)
+    changed = False
+    for entry in existing_entries:
+        for h in entry.get("hooks", []):
+            if _hook_basename(h.get("command")) == filename and h.get("command") != expected:
+                h["command"] = expected
+                changed = True
+    return changed
+
+
 def merge_hooks(settings, snippet_hooks):
     settings.setdefault("hooks", {})
     changed = False
@@ -78,6 +94,9 @@ def merge_hooks(settings, snippet_hooks):
         for entry in entries:
             filenames = [_hook_basename(h.get("command")) for h in entry.get("hooks", [])]
             if any(already_registered(existing, name) for name in filenames):
+                for name in filenames:
+                    if _repair_stale_commands(existing, name):
+                        changed = True
                 continue
             new_entry = dict(entry)
             new_entry["hooks"] = [
@@ -87,6 +106,35 @@ def merge_hooks(settings, snippet_hooks):
             existing.append(new_entry)
             changed = True
     return changed
+
+
+def _verify_hook_launches(command: str):
+    # Empty stdin makes both hooks hit their top-level except and exit(0)
+    # immediately -- no network call, no widget popup, just a pure check
+    # that the interpreter and hook path in this command actually resolve
+    # on this machine. Hook *logic* is covered by test_pill_pretooluse.py.
+    try:
+        proc = subprocess.run(
+            shlex.split(command, posix=(os.name != "nt")),
+            input="", capture_output=True, text=True, timeout=10,
+        )
+    except OSError as e:
+        return f"couldn't launch ({e})"
+    except subprocess.TimeoutExpired:
+        return "didn't exit within 10s"
+    if proc.returncode != 0:
+        detail = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else "(no stderr)"
+        return f"exited {proc.returncode}: {detail}"
+    return None
+
+
+def verify_installed_hooks():
+    problems = []
+    for name in HOOK_FILES:
+        err = _verify_hook_launches(_build_command(name))
+        if err:
+            problems.append(f"{name}: {err}")
+    return problems
 
 
 def main():
@@ -112,6 +160,15 @@ def main():
         if changed
         else "  hooks were already registered, nothing to merge"
     )
+
+    problems = verify_installed_hooks()
+    if problems:
+        print("\nWARNING: these hooks may not run:")
+        for p in problems:
+            print(f"  - {p}")
+    else:
+        print("  verified: both hooks launch cleanly with this interpreter")
+
     print("\nDone. Restart any running Claude Code sessions to pick this up.")
 
 

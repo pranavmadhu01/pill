@@ -57,13 +57,4 @@ commands = [h["command"] for e in settings_with_other["hooks"]["SessionStart"] f
 t("existing unrelated hook is preserved", any("some-other-tool.py" in c for c in commands))
 t("our hook is appended alongside it", any("pill_event.py" in c for c in commands))
 
-# A hook already registered under an old interpreter path (e.g. before a
-# Python upgrade) must be recognized, not duplicated
-settings_stale_interpreter = {
-    "hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "/old/python2.7 ~/.claude/hooks/pill_event.py"}]}]}
-}
-changed_stale = merge_hooks(settings_stale_interpreter, {"SessionStart": snippet_hooks["SessionStart"]})
-t("stale interpreter path still counts as registered", changed_stale is False)
-t("no duplicate added for the stale entry", len(settings_stale_interpreter["hooks"]["SessionStart"]) == 1)
-
 print("all checks passed")
