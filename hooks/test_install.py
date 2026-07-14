@@ -22,7 +22,9 @@ t("empty command has no basename", _hook_basename("") == "")
 # Command building -- always uses the running interpreter, never a
 # hardcoded "python3"
 built = _build_command("pill_event.py")
-t("built command references sys.executable", sys.executable in built)
+# forward-slash on Windows (immune to bash stripping unquoted backslashes),
+# unchanged elsewhere -- normalize both sides the same way to compare
+t("built command references sys.executable", sys.executable.replace("\\", "/") in built)
 t("built command references the hook file", "pill_event.py" in built)
 
 existing = [{"hooks": [{"type": "command", "command": "python3 ~/.claude/hooks/pill_event.py"}]}]
