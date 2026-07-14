@@ -38,12 +38,12 @@ def load_json(path):
 
 
 def _quote(s: str) -> str:
-    # Hook commands are handed to a shell by Claude Code -- quote for
-    # whichever one actually runs them rather than relying on `~` expansion
-    # or leaving a path with spaces unquoted, neither of which is a safe bet
-    # on Windows.
+    # Hook commands are handed to a shell by Claude Code -- cmd.exe on a
+    # plain Windows setup, but bash if Claude Code is running under Git
+    # Bash (common on Windows). bash silently strips unquoted backslashes,
+    # so always quote there regardless of whether there's a space to catch.
     if os.name == "nt":
-        return f'"{s}"' if " " in s else s
+        return f'"{s}"'
     return shlex.quote(s)
 
 
@@ -60,6 +60,13 @@ def _build_command(filename: str) -> str:
     # that name on a typical Windows install) or trusting `~` to expand.
     interpreter = sys.executable or ("python" if os.name == "nt" else "python3")
     hook_path = os.path.join(HOOKS_DIR, filename)
+    if os.name == "nt":
+        # Forward slashes are valid in a Windows path and immune to bash's
+        # unquoted-backslash-stripping regardless of which shell actually
+        # runs this command -- quoting alone still depends on Claude Code
+        # never re-splitting/re-escaping the string itself.
+        interpreter = interpreter.replace("\\", "/")
+        hook_path = hook_path.replace("\\", "/")
     return f"{_quote(interpreter)} {_quote(hook_path)}"
 
 
